@@ -237,6 +237,7 @@ type FlatTypeRoot struct {
 }
 
 type FlatTypes struct {
+	File       *desc.FileDescriptorProto
 	Files      map[string]*desc.FileDescriptorProto
 	Enums      map[string]*desc.EnumDescriptorProto
 	Messages   map[string]*desc.DescriptorProto
@@ -296,6 +297,7 @@ func flatTypesForFile(pkg *desc.FileDescriptorProto, out *FlatTypes) *FlatTypes 
 		}
 	}
 
+	out.File = pkg
 	out.Files[pkg.GetName()] = pkg
 	prefix := "." + pkg.GetPackage() + "."
 	out.populateMessageTypes(pkg.GetMessageType(), prefix)
