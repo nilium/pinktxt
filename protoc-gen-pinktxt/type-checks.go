@@ -11,6 +11,7 @@ func mergeTypeChecks(funcs template.FuncMap) template.FuncMap {
 		funcs = make(template.FuncMap)
 	}
 
+	funcs["is_oneof"] = isOneOf
 	funcs["is_repeated"] = isRepeated
 	funcs["is_optional"] = isOptional
 	funcs["is_required"] = isRequired
@@ -42,6 +43,14 @@ func isRepeated(d interface{}) bool {
 
 	if i, ok := d.(desc.FieldDescriptorProto_Label); ok {
 		return i == desc.FieldDescriptorProto_LABEL_REPEATED
+	}
+
+	return false
+}
+
+func isOneOf(d interface{}) bool {
+	if p, ok := d.(*desc.FieldDescriptorProto); ok && p != nil && p.Type != nil {
+		return p.OneofIndex != nil
 	}
 
 	return false
