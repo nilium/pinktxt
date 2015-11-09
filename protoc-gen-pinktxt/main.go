@@ -2,14 +2,10 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
-	"errors"
 	"io"
 	"io/ioutil"
 	"log"
 	"os"
-	"path"
-	"regexp"
 	"strconv"
 	"strings"
 	"text/template"
@@ -402,72 +398,8 @@ func main() {
 
 	// This code is all awful but at least it gets the job done right now.
 	var tx *template.Template
-	tx = template.New("").Delims(left, right).Funcs(mergeTypeChecks(template.FuncMap{
-		"error":    errors.New,
-		"find":     (typeFinder{root.Request}).Find,
-		"nl":       func() string { return "\n" },
-		"rmprefix": func(prefix, s string) string { return strings.TrimPrefix(s, prefix) },
-		"rmsuffix": func(suffix, s string) string { return strings.TrimSuffix(s, suffix) },
-		"trim":     func(cuts, s string) string { return strings.Trim(s, cuts) },
-		"trimr":    func(cuts, s string) string { return strings.TrimLeft(s, cuts) },
-		"triml":    func(cuts, s string) string { return strings.TrimRight(s, cuts) },
-		"trimws":   strings.TrimSpace,
-		"repeat":   func(count int, s string) string { return strings.Repeat(s, count) },
-		"indent": func(indent string, levels int, s string) string {
-			l := strings.Split(s, "\n")
-			indent = strings.Repeat(indent, levels)
-			for i := range l {
-				if len(l[i]) > 0 {
-					l[i] = indent + l[i]
-				}
-			}
-			return strings.Join(l, "\n")
-		},
-		"unindent": func(indent string, levels int, s string) string {
-			l := strings.Split(s, "\n")
-			indent = strings.Repeat(indent, levels)
-			for i := range l {
-				if strings.HasPrefix(l[i], indent) {
-					l[i] = strings.TrimPrefix(l[i], indent)
-				}
-			}
-			return strings.Join(l, "\n")
-		},
-		"json": func(d interface{}) (string, error) {
-			b, err := json.Marshal(d)
-			return string(b), err
-		},
-		"basename": path.Base,
-		"dirname":  path.Dir,
-		"prettyjson": func(prefix, indent string, d interface{}) (string, error) {
-			b, err := json.MarshalIndent(d, prefix, indent)
-			return string(b), err
-		},
-		"map": func(pairs ...interface{}) map[interface{}]interface{} {
-			m := make(map[interface{}]interface{})
-			for i := 0; i < len(pairs); i += 2 {
-				m[pairs[i]] = pairs[i+1]
-			}
-			return m
-		},
-		"exec": func(name string, dot ...interface{}) (string, error) {
-			var data interface{} = dot
-			if len(dot) == 1 {
-				data = dot[0]
-			} else if len(dot) == 0 {
-				data = nil
-			}
-
-			var buf bytes.Buffer
-			var err error
-			if name != "" {
-				err = tx.ExecuteTemplate(&buf, name, data)
-			} else {
-				err = tx.Execute(&buf, data)
-			}
-
-			return buf.String(), err
-		},
+	funcs := template.FuncMap{
+		"find": (typeFinder{root.Request}).Find,
 		"fexec": func(name, outfile string, data ...interface{}) error {
 			subroot := root
 			if len(data) == 1 {
@@ -496,64 +428,28 @@ func main() {
 				return tx.Execute(out, subroot)
 			}
 		},
-		"flatpkg": func(pkg *desc.FileDescriptorProto) *FlatTypes {
-			if pkg == nil {
-				return nil
+
+		"exec": func(name string, dot ...interface{}) (string, error) {
+			var data interface{} = dot
+			if len(dot) == 1 {
+				data = dot[0]
+			} else if len(dot) == 0 {
+				data = nil
 			}
 
-			return flatTypesForFile(pkg, nil)
-		},
-		"rxquote": regexp.QuoteMeta,
-		"gsubr": func(regex, repl, subj string) (string, error) {
-			rx, err := regexp.Compile(regex)
-			if err != nil {
-				return "", err
+			var buf bytes.Buffer
+			var err error
+			if name != "" {
+				err = tx.ExecuteTemplate(&buf, name, data)
+			} else {
+				err = tx.Execute(&buf, data)
 			}
-			return rx.ReplaceAllString(subj, repl), nil
+
+			return buf.String(), err
 		},
-		"gsubl": func(regex, repl, subj string) (string, error) {
-			rx, err := regexp.Compile(regex)
-			if err != nil {
-				return "", err
-			}
-			return rx.ReplaceAllLiteralString(subj, repl), nil
-		},
-		"gsub": func(old, new, s string) string {
-			return strings.Replace(s, old, new, -1)
-		},
-		"subln": func(old, new, s string, count int) string {
-			return strings.Replace(s, old, new, count)
-		},
-		"log":   func(d ...interface{}) error { log.Print(d...); return nil },
-		"logln": func(d ...interface{}) error { log.Println(d...); return nil },
-		"logf":  func(f string, d ...interface{}) error { log.Printf(f, d...); return nil },
-		"option": func(name string, pkg *desc.FileDescriptorProto) interface{} {
-			var bits []string
-			for _, v := range pkg.GetOptions().GetUninterpretedOption() {
-				bits = bits[0:0]
-				if strings.Join(bits, ".") != name {
-					continue
-				}
-				switch {
-				case v.IdentifierValue != nil:
-					return *v.IdentifierValue
-				case v.PositiveIntValue != nil:
-					return *v.PositiveIntValue
-				case v.NegativeIntValue != nil:
-					return *v.NegativeIntValue
-				case v.DoubleValue != nil:
-					return *v.DoubleValue
-				case v.AggregateValue != nil:
-					return *v.AggregateValue
-				case v.StringValue != nil:
-					return string(v.StringValue)
-				default:
-					return nil
-				}
-			}
-			return nil
-		},
-	}))
+	}
+
+	tx = template.New("").Delims(left, right).Funcs(mergeTypeChecks(copyDefaultTemplateFuncs(funcs)))
 
 	tx, err := tx.ParseFiles(params["template"]...)
 	if err != nil {
