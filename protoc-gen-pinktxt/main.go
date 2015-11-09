@@ -69,12 +69,55 @@ func (p Params) Get(key string) string {
 	return ""
 }
 
+func splitQuotedOn(splitters ...rune) func(rune) bool {
+	shouldSplit := make(map[rune]struct{}, len(splitters))
+	for _, r := range splitters {
+		shouldSplit[r] = struct{}{}
+	}
+
+	inquote, escape := false, false
+	return func(r rune) bool {
+		if escape {
+			escape = false
+			return false
+		}
+
+		if !escape && r == '"' {
+			inquote = !inquote
+		}
+
+		if inquote {
+			escape = r == '\\'
+			return false
+		}
+
+		_, ok := shouldSplit[r]
+		return ok
+	}
+}
+
 func parseParameters(params string) Params {
-	pairs := strings.FieldsFunc(params, func(r rune) bool { return r == '=' || r == ',' })
+	pairs := strings.FieldsFunc(params, splitQuotedOn(';'))
 	r := make(map[string][]string, len(pairs))
-	for i := 0; i < len(pairs); i += 2 {
-		key, value := pairs[i], pairs[i+1]
-		r[key] = append(r[key], value)
+	for _, pair := range pairs {
+		values := strings.FieldsFunc(pair, splitQuotedOn('=', ','))
+		key := values[0]
+		if len(pair) == 1 {
+			r[key] = append(r[key], "")
+			continue
+		}
+		for i := 1; i < len(values); i++ {
+			val := values[i]
+			if len(val) > 0 && val[0] == '"' {
+				var err error
+				val, err = strconv.Unquote(val)
+				if err != nil {
+					panic(err)
+				}
+			}
+
+			r[key] = append(r[key], val)
+		}
 	}
 	return Params(r)
 }
